@@ -4,7 +4,8 @@ Sometimes it is necessary to log all the requests and responses of a specific to
 
 Released as open source by NCC Group Plc - https://www.nccgroup.trust/
 
-Developed by Soroush Dalili (@irsdl)
+Originally Developed by Soroush Dalili [@irsdl](https://twitter.com/irsdl)
+Further developed by Corey Arthur [@CoreyD97](https://twitter.com/CoreyD97)
 
 Project link: http://www.github.com/nccgroup/BurpSuiteLoggerPlusPlus
 
@@ -27,22 +28,26 @@ Step 5. (Using!) Now you can use this extension!
 
 <b>Requirements:</b>
 - Latest version of Burp Suite
-- Java version 6 or above
+- Java version 7 or above
 
 <b>Features:</b>
 
-- Works with the latest version of Burp Suite (tested on 1.6.27)
+- Works with the latest version of Burp Suite (tested on 1.7.26)
 - Logs all the tools that are sending requests and receiving responses
 - Ability to log from a specific tool
 - Ability to save the results in CSV format
 - Ability to show results of custom regular expressions in request/response
 - User can customise the column headers
+- Advanced Filters can be created to display only requests matching a specific string or regex pattern.
+- Row highlighting can be added using advanced filters to make interesting requests more visible.
+- Live requests and responses.
+- Multiple view options.
+- Pop out view panel.
 
 <b>Current Limitations:</b>
 
-- Cannot log the requests that do not have any responses.
-- Cannot log the requests' time.
-- Cannot calculate the delay between a request and its response. 
+- Cannot log the requests' time unless originating from proxy tool.
+- Cannot calculate the delay between a request and its response unless originating from proxy tool.
 
 <b>Reporting bugs:</b>
 
@@ -50,8 +55,8 @@ If you have found an issue, please report it in the GitHub project.
 
 <b>Tested on:</b>
 
-This extension has been built by using Java v6 library (originally was v7) and has been tested on Burp Suite v1.6.27.
-If you want to use Java v7 or v8, you need to download the source code and compile it yourself. The project has been created by Eclipse, Apache Ant (to create the JAR file automatically), and WindowBuilder (to design the UI in Eclipse).
+This extension has been built by using Java v7 library and has been tested on Burp Suite v1.7.25.
+If you want to use Java v7 or v8, you need to download the source code and compile it yourself. The project has been created by IntelliJ Idea, Eclipse, Apache Ant (to create the JAR file automatically), and WindowBuilder (to design the UI in Eclipse).
 
 <b>Latest version:</b>
 

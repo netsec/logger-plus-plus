@@ -12,34 +12,32 @@
 
 package burp;
 
-import java.io.PrintWriter;
-import java.net.URL;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import burp.filter.ColorFilter;
 import org.apache.commons.lang3.StringEscapeUtils;
 
-import burp.BurpExtender.TableHelper;
+import javax.swing.*;
+import java.net.URL;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 //
 // class to hold details of each log entry
 //
-
-public class LogEntry
+//TODO Better column to value mapping.
+public class LogEntry extends RowFilter.Entry
 {
-	// Request Related
+	IHttpRequestResponse requestResponse;
 	final int tool;
-	final IHttpRequestResponsePersisted requestResponse;
-	final URL url;
-	String uniqueIdentifier="NA";
-	String relativeURL="";
 	String host="";
+	String method="";
+	final URL url;
+	String relativeURL="";
 	boolean params=false;
-	boolean hasQueryStringParam=false;
+	Short status=-1;
 	boolean hasBodyParam=false;
 	boolean hasCookieParam=false;
 	String targetIP=""; // Burp Suite API does not give it to me!
@@ -50,21 +48,18 @@ public class LogEntry
 	boolean isSSL=false;
 	String urlExtension="";
 	String referrerURL = "";
-	String requstContentType = "";
+	String requestContentType = "";
 	String protocol="";
 	int targetPort=-1;
 	int requestLength=-1;
-	String method="";
 	String clientIP="";
-	// Response Related
-	Short status=-1;
 	boolean hasSetCookies=false;
 	String responseTime="";
-	String responseContentType_burp="";
-	String responseInferredContentType_burp="";
+	String responseMimeType ="";
+	String responseInferredMimeType ="";
 	int responseLength=-1;
 	String responseContentType="";
-	boolean isCompleted = false; // Currently it is true unless I use requests too
+	boolean complete = false;
 	cookieJarStatus usesCookieJar = cookieJarStatus.NO;
 	// User Related
 	String comment="";
@@ -72,55 +67,37 @@ public class LogEntry
 	String[] regexAllReq = {"","","","",""};
 	String[] regexAllResp = {"","","","",""};
 
-
-	// Future Implementation
-	//		final String requestTime; // I can get this only on request
-	//		final String requestResponseDelay; // I can get this only on request
-	//		final String requestUID; // I need something like this when I want to get the requests to match them with their responses
+	ArrayList<UUID> matchingColorFilters;
+	final String requestTime;
+	String requestResponseDelay;
 
 	// Defining necessary parameters from the caller
-	private LoggerPreferences loggerPreferences;
-	private TableHelper tableHelper;
-	private PrintWriter stdout, stderr;
-	private boolean isDebug;
-	private IBurpExtenderCallbacks callbacks;
-	private IExtensionHelpers helpers;
 
-	LogEntry(int tool, boolean messageIsRequest, IHttpRequestResponsePersisted requestResponse, URL url, IRequestInfo tempAnalyzedReq, IInterceptedProxyMessage message, TableHelper tableHelper, LoggerPreferences loggerPreferences, PrintWriter stdout, PrintWriter stderr, boolean isDebug, IBurpExtenderCallbacks callbacks)
+	LogEntry(int tool, boolean messageIsRequest, IHttpRequestResponse requestResponse, URL url, IRequestInfo tempAnalyzedReq, IInterceptedProxyMessage message)
 	{
-		this.stdout = stdout;
-		this.stderr = stderr;
-		this.isDebug = isDebug;
-		this.loggerPreferences = loggerPreferences;
-		this.callbacks = callbacks;
-		this.tableHelper= tableHelper;
-		this.callbacks = callbacks;
-		this.helpers = callbacks.getHelpers();
-
+		this.matchingColorFilters = new ArrayList<UUID>();
 		IHttpService tempRequestResponseHttpService = requestResponse.getHttpService();
 
 
 		String strFullRequest = new String(requestResponse.getRequest());
 		List<String> lstFullRequestHeader = tempAnalyzedReq.getHeaders();
-
-		if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("uniqueIdentifier")) // This is good to increase the speed when it is time consuming
-			this.uniqueIdentifier=java.util.UUID.randomUUID().toString();
+		LogTable logTable = BurpExtender.getInstance().getLogTable();
 
 		this.tool = tool;
 		this.requestResponse = requestResponse;
 
 		this.url = url;
-		if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("url")) // This is good to increase the speed when it is time consuming
-			this.relativeURL = url.getFile();
+		if(logTable.getColumnModel().isColumnEnabled("path")) // This is good to increase the speed when it is time consuming
+			this.relativeURL = url.getPath();
 		this.host = tempRequestResponseHttpService.getHost();
 		this.protocol = tempRequestResponseHttpService.getProtocol();
-		this.isSSL=(this.protocol.equals("https"))? true: false;
+		this.isSSL= this.protocol.equals("https");
 
-		if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("targetPort")) // This is good to increase the speed when it is time consuming
+		if(logTable.getColumnModel().isColumnEnabled("targetPort")) // This is good to increase the speed when it is time consuming
 			this.targetPort = tempRequestResponseHttpService.getPort();
 
-		if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("method")) // This is good to increase the speed when it is time consuming
-			this.method = tempAnalyzedReq.getMethod();
+		if(logTable.getColumnModel().isColumnEnabled("method")) // This is good to increase the speed when it is time consuming
+ 			this.method = tempAnalyzedReq.getMethod();
 		try{
 			// I don't want to delete special characters such as ; or : from the extension as it may really be part of the extension! (burp proxy log ignores them)
 			String tempPath = url.getPath().replaceAll("\\\\", "/");
@@ -129,40 +106,27 @@ public class LogEntry
 			if(tempPathDotLocation>=0)
 				this.urlExtension = tempPath.substring(tempPathDotLocation+1);
 		}catch(Exception e){
-			if(isDebug)
-				stderr.println(e.getMessage());
 			this.urlExtension = "";
 		}
 
 		if(message!=null){
-			if(isDebug){
-				//stdout.println("I have a message from proxy!");
-			}
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("listenerInterface")) // This is good to increase the speed when it is time consuming
+			if(logTable.getColumnModel().isColumnEnabled("listenerInterface")) // This is good to increase the speed when it is time consuming
 				this.listenerInterface=message.getListenerInterface();
 
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("clientIP")) // This is good to increase the speed when it is time consuming
+			if(logTable.getColumnModel().isColumnEnabled("clientIP")) // This is good to increase the speed when it is time consuming
 				this.clientIP=message.getClientIpAddress().toString();
-
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("uniqueIdentifier")) // This is good to increase the speed when it is time consuming
-				this.uniqueIdentifier = "P"+String.valueOf(message.getMessageReference());
-
-
 		}
 		this.requestLength = strFullRequest.length() - tempAnalyzedReq.getBodyOffset();
-
-
-		this.hasQueryStringParam = (url.getQuery()!=null) ? true : false;
-		this.hasBodyParam = (requestLength>0) ? true : false;
-		this.params = (this.hasQueryStringParam || this.hasBodyParam) ? true : false;
+		this.hasBodyParam = requestLength > 0;
+		this.params = this.url.getQuery() != null || this.hasBodyParam;
 		this.hasCookieParam = false;
 
 		// reading request headers like a boss!
-		if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("sentCookies") ||
-				tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("hasCookieParam") ||
-				tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("usesCookieJar") ||
-				tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("referrerURL") ||
-				tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("requstContentType")){ // This is good to increase the speed when it is time consuming
+		if(logTable.getColumnModel().isColumnEnabled("sentCookies") ||
+				logTable.getColumnModel().isColumnEnabled("hasCookieParam") ||
+				logTable.getColumnModel().isColumnEnabled("usesCookieJar") ||
+				logTable.getColumnModel().isColumnEnabled("referrer") ||
+				logTable.getColumnModel().isColumnEnabled("requestContentType")){ // This is good to increase the speed when it is time consuming
 			for(String item:lstFullRequestHeader){
 				if(item.indexOf(":")>=0){
 					String[] headerItem = item.split(":\\s",2);
@@ -174,10 +138,10 @@ public class LogEntry
 							this.sentCookies += ";"; // we need to ad this to search it in cookie Jar!
 
 							// to ensure it is enabled as it is process consuming
-							if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("usesCookieJar")){
+							if(logTable.getColumnModel().isColumnEnabled("usesCookieJar")){
 								// Check to see if it uses cookie Jars!
-								List<ICookie> cookieJars = callbacks.getCookieJarContents();
-								boolean atLeastOneDidNotMatched = false;
+								List<ICookie> cookieJars = BurpExtender.getInstance().getCallbacks().getCookieJarContents();
+								boolean oneNotMatched = false;
 								boolean anyParamMatched = false;
 
 								for(ICookie cookieItem : cookieJars){
@@ -187,16 +151,16 @@ public class LogEntry
 										if(this.sentCookies.contains(currentCookieJarParam)){
 											anyParamMatched = true;
 										}else{
-											atLeastOneDidNotMatched = true;
+											oneNotMatched = true;
 										}
 									}
-									if(anyParamMatched && atLeastOneDidNotMatched){
+									if(anyParamMatched && oneNotMatched){
 										break; // we do not need to analyse it more!
 									}
 								}
-								if(atLeastOneDidNotMatched && anyParamMatched){
+								if(oneNotMatched && anyParamMatched){
 									this.usesCookieJar=cookieJarStatus.PARTIALLY;
-								}else if(!atLeastOneDidNotMatched && anyParamMatched){
+								}else if(!oneNotMatched && anyParamMatched){
 									this.usesCookieJar=cookieJarStatus.YES;
 								}
 							}
@@ -204,7 +168,7 @@ public class LogEntry
 					}else if(headerItem[0].equals("referer")){
 						this.referrerURL = headerItem[1];
 					}else if(headerItem[0].equals("content-type")){
-						this.requstContentType = headerItem[1];
+						this.requestContentType = headerItem[1];
 					}
 				}
 			}
@@ -212,12 +176,12 @@ public class LogEntry
 
 		// RegEx processing for requests - should be available only when we have a RegEx rule!
 		// There are 5 RegEx rule for requests
-		for(int i=0;i<=5;i++){
-			String regexVarName = "regex"+String.valueOf(i+1)+"Req";
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName(regexVarName)){
+		for(int i=1;i<5;i++){
+			String regexVarName = "regex"+(i+1)+"Req";
+			if(logTable.getColumnModel().isColumnEnabled(regexVarName)){
 				// so this rule is enabled!
 				// check to see if the RegEx is not empty
-				TableStructure regexColumn = tableHelper.getTableHeaderColumnsDetails().getEnabledTableHeader_byName(regexVarName);
+				LogTableColumn regexColumn = logTable.getColumnModel().getColumnByName(regexVarName);
 				String regexString = regexColumn.getRegExData().getRegExString();
 				if(!regexString.isEmpty()){
 					// now we can process it safely!
@@ -233,11 +197,11 @@ public class LogEntry
 						int counter = 1;
 						while (m.find()) {
 							if(counter==2){
-								allMatches.insert(0, "«");
-								allMatches.append("»");
+								allMatches.insert(0, "ï¿½");
+								allMatches.append("ï¿½");
 							}
 							if(counter > 1){
-								allMatches.append("«"+m.group()+"»");
+								allMatches.append("ï¿½"+m.group()+"ï¿½");
 							}else{
 								allMatches.append(m.group());
 							}
@@ -249,127 +213,261 @@ public class LogEntry
 						this.regexAllReq[i] = allMatches.toString();
 
 					}catch(Exception e){
-						stderr.println("Error in regular expression: " + regexString);
+						BurpExtender.getInstance().getCallbacks().printError("Error in regular expression: " + regexString);
 					}
 
 				}
 			}
-		}
-
-
-		if(!messageIsRequest){
-			IResponseInfo tempAnalyzedResp = helpers.analyzeResponse(requestResponse.getResponse());
-			String strFullResponse = new String(requestResponse.getResponse());
-			List<String> lstFullResponseHeader = tempAnalyzedResp.getHeaders();
-			this.status= tempAnalyzedResp.getStatusCode();
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("responseContentType_burp")) // This is good to increase the speed when it is time consuming
-				this.responseContentType_burp=tempAnalyzedResp.getStatedMimeType();
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("responseInferredContentType_burp")) // This is good to increase the speed when it is time consuming
-				this.responseInferredContentType_burp = tempAnalyzedResp.getInferredMimeType();
-			this.responseLength= strFullResponse.length() - tempAnalyzedResp.getBodyOffset();
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("newCookies")) // This is good to increase the speed when it is time consuming
-				for(ICookie cookieItem : tempAnalyzedResp.getCookies()){
-					this.newCookies += cookieItem.getName()+"="+cookieItem.getValue()+"; ";
-				}
-			this.hasSetCookies = (!newCookies.isEmpty()) ? true : false;
-			DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-			Date date = new Date();
-			this.responseTime= dateFormat.format(date);
-
-			if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName("responseContentType")){ // This is good to increase the speed when it is time consuming
-				for(String item:lstFullResponseHeader){
-					item = item.toLowerCase();
-					if(item.startsWith("content-type: ")){
-						String[] temp = item.split("content-type:\\s",2);
-						if(temp.length>0)
-							this.responseContentType = temp[1];
-					}
-				}
-			}
-
-			// RegEx processing for responses - should be available only when we have a RegEx rule!
-			// There are 5 RegEx rule for requests
-			for(int i=0;i<=5;i++){
-				String regexVarName = "regex"+String.valueOf(i+1)+"Resp";
-				if(tableHelper.getTableHeaderColumnsDetails().isTableHeaderEnabled_byName(regexVarName)){
-					// so this rule is enabled!
-					// check to see if the RegEx is not empty
-					TableStructure regexColumn = tableHelper.getTableHeaderColumnsDetails().getEnabledTableHeader_byName(regexVarName);
-					String regexString = regexColumn.getRegExData().getRegExString();
-					if(!regexString.isEmpty()){
-						// now we can process it safely!
-						Pattern p = null;
-						try{
-							if(regexColumn.getRegExData().isRegExCaseSensitive())
-								p = Pattern.compile(regexString);
-							else
-								p = Pattern.compile(regexString, Pattern.CASE_INSENSITIVE);
-
-							Matcher m = p.matcher(strFullResponse);
-							StringBuilder allMatches = new StringBuilder();
-
-							int counter = 1;
-							while (m.find()) {
-								if(counter==2){
-									allMatches.insert(0, "«");
-									allMatches.append("»");
-								}
-								if(counter > 1){
-									allMatches.append("«"+m.group()+"»");
-								}else{
-									allMatches.append(m.group());
-								}
-								counter++;
-
-							}
-
-							this.regexAllResp[i] = allMatches.toString();
-
-						}catch(Exception e){
-							stderr.println("Error in regular expression: " + regexString);
-						}
-
-					}
-				}
-			}
-			this.isCompleted = true;
-			tempAnalyzedResp = null;
 		}
 
 		this.comment = "";
-
-		tempRequestResponseHttpService = null;
-
-		tempAnalyzedReq = null;
-
-	}
-
-	@Override 
-	public boolean equals(Object other) {
-		boolean result = false;
-		if (other instanceof LogEntry) {
-			LogEntry that = (LogEntry) other;
-			result = (this.uniqueIdentifier.equals(that.uniqueIdentifier));
-			if(isDebug){
-				stderr.println("this.uniqueIdentifier: " + this.uniqueIdentifier + " that.uniqueIdentifier: "+that.uniqueIdentifier + " result: "+result);
-			}
-
+		this.requestTime = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss").format(new Date());
+		if(!messageIsRequest){
+			processResponse(requestResponse);
 		}
-		return result;
 	}
 
-	public String getCSVHeader(boolean isFullLog) {
-		StringBuilder result = new StringBuilder();
-		//			for (int i=1; i<loggerTableDetails.length; i++) {
-		//				result.append(loggerTableDetails[i][1]);
-		//				if(i<tableHelper.getLogTableModel().getColumnCount()-1)
-		//					result.append(",");
-		//			}
+	public void processResponse(IHttpRequestResponse requestResponse) {
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+		Date responseDate = new Date();
+		try {
+			Date requestDate = sdf.parse(this.requestTime);
+			this.requestResponseDelay = formatDelay(responseDate.getTime() - requestDate.getTime());
+		} catch (ParseException e) {}
+		this.responseTime = sdf.format(responseDate);
 
-		for (int i=1; i<tableHelper.getTableHeaderColumnsDetails().getVisibleColumnsDefinitionList().size(); i++) {
-			result.append(tableHelper.getTableHeaderColumnsDetails().getVisibleColumnsDefinitionList().get(i).getVisibleName());
-			if(i<tableHelper.getLogTableModel().getColumnCount()-1)
-				result.append(",");
+		//Finalise request,response by saving to temp file and clearing from memory.
+		this.requestResponse = BurpExtender.getInstance().getCallbacks().saveBuffersToTempFiles(requestResponse);
+
+		IResponseInfo tempAnalyzedResp = BurpExtender.getInstance().getHelpers().analyzeResponse(requestResponse.getResponse());
+		String strFullResponse = new String(requestResponse.getResponse());
+		this.responseLength= strFullResponse.length() - tempAnalyzedResp.getBodyOffset();
+
+		LogTable logTable = BurpExtender.getInstance().getLogTable();
+		List<String> lstFullResponseHeader = tempAnalyzedResp.getHeaders();
+		this.status= tempAnalyzedResp.getStatusCode();
+		if(logTable.getColumnModel().isColumnEnabled("MimeType")) // This is good to increase the speed when it is time consuming
+			this.responseMimeType =tempAnalyzedResp.getStatedMimeType();
+		if(logTable.getColumnModel().isColumnEnabled("InferredType")) // This is good to increase the speed when it is time consuming
+			this.responseInferredMimeType = tempAnalyzedResp.getInferredMimeType();
+
+		if(logTable.getColumnModel().isColumnEnabled("newCookies")) // This is good to increase the speed when it is time consuming
+			for(ICookie cookieItem : tempAnalyzedResp.getCookies()){
+				this.newCookies += cookieItem.getName()+"="+cookieItem.getValue()+"; ";
+			}
+		this.hasSetCookies = !newCookies.isEmpty();
+
+		if(logTable.getColumnModel().isColumnEnabled("responseContentType")){ // This is good to increase the speed when it is time consuming
+			for(String item:lstFullResponseHeader){
+				item = item.toLowerCase();
+				if(item.startsWith("content-type: ")){
+					String[] temp = item.split("content-type:\\s",2);
+					if(temp.length>0)
+						this.responseContentType = temp[1];
+				}
+			}
+		}
+
+		Pattern titlePattern = Pattern.compile("(?<=<title>)(.)+(?=</title>)");
+		Matcher titleMatcher = titlePattern.matcher(strFullResponse);
+		if(titleMatcher.find()){
+			this.title = titleMatcher.group(1);
+		}
+
+		// RegEx processing for responses - should be available only when we have a RegEx rule!
+		// There are 5 RegEx rule for requests
+		for(int i=0;i<5;i++){
+			String regexVarName = "regex"+(i+1)+"Resp";
+			if(logTable.getColumnModel().isColumnEnabled(regexVarName)){
+				// so this rule is enabled!
+				// check to see if the RegEx is not empty
+				LogTableColumn regexColumn = logTable.getColumnModel().getColumnByName(regexVarName);
+				String regexString = regexColumn.getRegExData().getRegExString();
+				if(!regexString.isEmpty()){
+					// now we can process it safely!
+					Pattern p = null;
+					try{
+						if(regexColumn.getRegExData().isRegExCaseSensitive())
+							p = Pattern.compile(regexString);
+						else
+							p = Pattern.compile(regexString, Pattern.CASE_INSENSITIVE);
+
+						Matcher m = p.matcher(strFullResponse);
+						StringBuilder allMatches = new StringBuilder();
+
+						int counter = 1;
+						while (m.find()) {
+							if(counter==2){
+								allMatches.insert(0, "ï¿½");
+								allMatches.append("ï¿½");
+							}
+							if(counter > 1){
+								allMatches.append("ï¿½"+m.group()+"ï¿½");
+							}else{
+								allMatches.append(m.group());
+							}
+							counter++;
+
+						}
+
+						this.regexAllResp[i] = allMatches.toString();
+
+					}catch(Exception e){
+						BurpExtender.getInstance().getCallbacks().printError("Error in regular expression: " + regexString);
+					}
+
+				}
+			}
+		}
+		if(!logTable.getColumnModel().isColumnEnabled("response") && !logTable.getColumnModel().isColumnEnabled("request")){
+			this.requestResponse = null;
+		}
+
+		this.complete = true;
+	}
+
+	private String formatDelay(long l) {
+		if(l < 1000)
+			return String.format("%dms", l);
+		if(l < 60000){
+			return String.format("%ds %dms", TimeUnit.MILLISECONDS.toSeconds(l),
+					l - TimeUnit.SECONDS.toMillis(TimeUnit.MILLISECONDS.toSeconds(l)));
+		}else
+			return String.format("%dmin %ds", TimeUnit.MILLISECONDS.toMinutes(l),
+					TimeUnit.MILLISECONDS.toSeconds(l) - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(l)));
+	}
+
+	@Override
+	public Object getModel() {
+		return null;
+	}
+
+	@Override
+	public int getValueCount() {
+		return 42;
+	}
+
+	@Override
+	public Object getValue(int i) {
+		switch (i) {
+			case 0://number
+				return 0;
+			case 1://tool
+				return BurpExtender.getInstance().getCallbacks().getToolName(tool);
+			case 2://host
+				return this.protocol + "://" + this.host;
+			case 3://method
+				return method;
+			case 4: //url
+				return url;
+			case 5: //path
+				return this.relativeURL;
+			case 6: //query
+				return this.url != null ? (this.url.getQuery() == null ? "" : this.url.getQuery()) : "";
+			case 7: //params
+				return params;
+			case 8: //status
+				return status;
+			case 9: //responseLength
+				return responseLength;
+			case 10: //responseMimeType
+				return responseMimeType;
+			case 11: //urlExtension
+				return urlExtension;
+			case 12: //comment
+				return comment;
+			case 13: //isSSL
+				return isSSL;
+			case 14: //newCookies
+				return newCookies;
+			case 15: //requestTime
+				return requestTime;
+			case 16: //listenerInterface
+				return listenerInterface;
+			case 17: //clientIP
+				return clientIP;
+			case 18: //responseContentType
+				return responseContentType;
+			case 19: //responseInferredMimeType
+				return responseInferredMimeType;
+			case 20: //hasQueryStringParam
+				return this.url.getQuery() != null;
+			case 21: //hasBodyParam
+				return hasBodyParam;
+			case 22: //hasCookieParam
+				return hasCookieParam;
+			case 23: //sentCookies
+				return sentCookies;
+			case 24: //usesCookieJar
+				return usesCookieJar.toString();
+			case 25: //protocol
+				return protocol;
+			case 26: //hostname
+				return this.host;
+			case 27: //targetPort
+				return targetPort;
+			case 28: //requestContentType
+				return requestContentType;
+			case 29: //referrerURL
+				return referrerURL;
+			case 30: //requestLength
+				return requestLength;
+			case 31: //hasSetCookies
+				return hasSetCookies;
+			case 32: //complete
+				return complete;
+			case 33: //regex1Req
+				return regexAllReq[0];
+			case 34: //regex2Req
+				return regexAllReq[1];
+			case 35: //regex3Req
+				return regexAllReq[2];
+			case 36: //regex4Req
+				return regexAllReq[3];
+			case 37: //regex5Req
+				return regexAllReq[4];
+			case 38: //regex1Resp
+				return regexAllResp[0];
+			case 39: //regex2Resp
+				return regexAllResp[1];
+			case 40: //regex3Resp
+				return regexAllResp[2];
+			case 41: //regex4Resp
+				return regexAllResp[3];
+			case 42: //regex5Resp
+				return regexAllResp[4];
+			case 43: //request
+				return requestResponse != null && requestResponse.getRequest() != null ? new String(requestResponse.getRequest()) : "";
+			case 44: //response
+				return requestResponse != null && requestResponse.getResponse() != null ? new String(requestResponse.getResponse()) : "";
+			case 45: //responseTime
+				return responseTime != null ? responseTime : "";
+			case 46: //requestResponseDelay
+				return requestResponseDelay != null ? requestResponseDelay : "";
+			default:
+				return null;
+		}
+	}
+
+	@Override
+	public Object getIdentifier() {
+		return null;
+	}
+
+
+	public static String getCSVHeader(LogTable table, boolean isFullLog) {
+		StringBuilder result = new StringBuilder();
+
+		short count = 0;
+		ArrayList<LogTableColumn> columns = table.getColumnModel().getAllColumns();
+		Collections.sort(columns);
+		for (LogTableColumn logTableColumn : columns) {
+			if(logTableColumn.isVisible() && logTableColumn.isEnabled()) {
+				result.append(logTableColumn.getName());
+				if(count < columns.size()-1)
+					result.append(",");
+			}
+			count++;
 		}			
 
 		if(isFullLog){
@@ -392,132 +490,146 @@ public class LogEntry
 		//					result.append(",");
 		//			}
 
-		for (int i=1; i<tableHelper.getTableHeaderColumnsDetails().getVisibleColumnsDefinitionList().size(); i++) {
-
-			result.append(StringEscapeUtils.escapeCsv(String.valueOf(getValueByName((String) tableHelper.getTableHeaderColumnsDetails().getVisibleColumnsDefinitionList().get(i).getName()))));
-
-			if(i<tableHelper.getLogTableModel().getColumnCount()-1)
-				result.append(",");
+		LogTableColumnModel columnModel = BurpExtender.getInstance().getLogTable().getColumnModel();
+		ArrayList<LogTableColumn> columns = columnModel.getAllColumns();
+		Collections.sort(columns);
+		short count = 0;
+		for (LogTableColumn logTableColumn : columns) {
+			if(logTableColumn.isVisible() && logTableColumn.isEnabled()){
+				result.append(StringEscapeUtils.escapeCsv(getValue(logTableColumn.getIdentifier()).toString()));
+				if (count < columnModel.getColumnCount() - 1)
+					result.append(",");
+			}
+			count++;
 		}
 
 		if(isFullLog){
 			result.append(",");		    
-			result.append(StringEscapeUtils.escapeCsv(new String(requestResponse.getRequest())));
+			result.append(StringEscapeUtils.escapeCsv(String.valueOf(requestResponse.getRequest())));
 			result.append(",");
-			result.append(StringEscapeUtils.escapeCsv(new String(requestResponse.getResponse())));
+			result.append(StringEscapeUtils.escapeCsv(String.valueOf(requestResponse.getResponse())));
 		}
 		return result.toString();
 	}
 
-	public Object getValueByName(String name){
-		if(isDebug){
-			//stdout.println(name);
-		}
+	public Object getValueByKey(columnNamesType columnName){
 
 		// switch (name.toLowerCase()) // this works fine in Java v7
 		try{
-			switch(columnNamesType.valueOf(name.toUpperCase()))
+			switch(columnName)
 			{
-			case TOOL:
-				return callbacks.getToolName(tool);
-			case URL:
-				return this.relativeURL;
-			case STATUS:
-				return this.status;
-			case PROTOCOL:
-				return this.protocol;
-			case HOSTNAME:
-				return this.host;
-			case HOST:
-				return this.protocol+"://"+this.host;
-			case RESPONSECONTENTTYPE_BURP:
-				return this.responseContentType_burp;
-			case RESPONSELENGTH:
-				return this.responseLength;
-			case TARGETPORT:
-				return this.targetPort;
-			case METHOD:
-				return this.method;
-			case RESPONSETIME:
-				return this.responseTime;
-			case COMMENT:
-				return this.comment;
-			case REQUSTCONTENTTYPE:
-				return this.requstContentType;
-			case URLEXTENSION:
-				return this.urlExtension;
-			case REFERRERURL:
-				return this.referrerURL;
-			case HASQUERYSTRINGPARAM:
-				return this.hasQueryStringParam;
-			case HASBODYPARAM:
-				return this.hasBodyParam;
-			case HASCOOKIEPARAM:
-				return this.hasCookieParam;
-			case REQUESTLENGTH:
-				return this.requestLength;
-			case RESPONSECONTENTTYPE:
-				return this.responseContentType;
-			case RESPONSEINFERREDCONTENTTYPE_BURP:
-				return this.responseInferredContentType_burp;
-			case HASSETCOOKIES:
-				return this.hasSetCookies;
-			case PARAMS:
-				return this.params;
-			case TITLE:
-				return this.title;
-			case ISSSL:
-				return this.isSSL;
-			case TARGETIP:
-				return this.targetIP;
-			case NEWCOOKIES:
-				return this.newCookies;
-			case LISTENERINTERFACE:
-				return this.listenerInterface;
-			case CLIENTIP:
-				return this.clientIP;
-			case ISCOMPLETED:
-				return this.isCompleted;
-			case UNIQUEIDENTIFIER:
-				return this.uniqueIdentifier;
-			case SENTCOOKIES:
-				return this.sentCookies;
-			case USESCOOKIEJAR:
-				return this.usesCookieJar.toString();
-			case REGEX1REQ:
-				return this.regexAllReq[0];
-			case REGEX2REQ:
-				return this.regexAllReq[1];
-			case REGEX3REQ:
-				return this.regexAllReq[2];
-			case REGEX4REQ:
-				return this.regexAllReq[3];
-			case REGEX5REQ:
-				return this.regexAllReq[4];
-			case REGEX1RESP:
-				return this.regexAllResp[0];
-			case REGEX2RESP:
-				return this.regexAllResp[1];
-			case REGEX3RESP:
-				return this.regexAllResp[2];
-			case REGEX4RESP:
-				return this.regexAllResp[3];
-			case REGEX5RESP:
-				return this.regexAllResp[4];
-			default:
-				return "";
+				case TOOL:
+					return BurpExtender.getInstance().getCallbacks().getToolName(tool);
+				case URL:
+					return this.url;
+				case PATH:
+					return this.relativeURL;
+				case QUERY:
+					return this.url.getQuery();
+				case STATUS:
+					return this.status;
+				case PROTOCOL:
+					return this.protocol;
+				case HOSTNAME:
+					return this.host;
+				case HOST:
+					return this.protocol+"://"+this.host;
+				case MIMETYPE:
+					return this.responseMimeType;
+				case RESPONSELENGTH:
+					return this.responseLength;
+				case TARGETPORT:
+					return this.targetPort;
+				case METHOD:
+					return this.method;
+				case RESPONSETIME:
+					return this.responseTime;
+				case COMMENT:
+					return this.comment;
+				case REQUESTCONTENTTYPE:
+					return this.requestContentType;
+				case URLEXTENSION:
+					return this.urlExtension;
+				case REFERRER:
+					return this.referrerURL;
+				case HASQUERYSTRINGPARAM:
+					return this.url.getQuery() != null;
+				case HASBODYPARAM:
+					return this.hasBodyParam;
+				case HASCOOKIEPARAM:
+					return this.hasCookieParam;
+				case REQUESTLENGTH:
+					return this.requestLength;
+				case RESPONSECONTENTTYPE:
+					return this.responseContentType;
+				case INFERREDTYPE:
+					return this.responseInferredMimeType;
+				case HASSETCOOKIES:
+					return this.hasSetCookies;
+				case PARAMS:
+					return this.params;
+				case TITLE:
+					return this.title;
+				case ISSSL:
+					return this.isSSL;
+				case TARGETIP:
+					return this.targetIP;
+				case NEWCOOKIES:
+					return this.newCookies;
+				case LISTENERINTERFACE:
+					return this.listenerInterface;
+				case CLIENTIP:
+					return this.clientIP;
+				case COMPLETE:
+					return this.complete;
+				case SENTCOOKIES:
+					return this.sentCookies;
+				case USESCOOKIEJAR:
+					return this.usesCookieJar.toString();
+				case REGEX1REQ:
+					return this.regexAllReq[0];
+				case REGEX2REQ:
+					return this.regexAllReq[1];
+				case REGEX3REQ:
+					return this.regexAllReq[2];
+				case REGEX4REQ:
+					return this.regexAllReq[3];
+				case REGEX5REQ:
+					return this.regexAllReq[4];
+				case REGEX1RESP:
+					return this.regexAllResp[0];
+				case REGEX2RESP:
+					return this.regexAllResp[1];
+				case REGEX3RESP:
+					return this.regexAllResp[2];
+				case REGEX4RESP:
+					return this.regexAllResp[3];
+				case REGEX5RESP:
+					return this.regexAllResp[4];
+				case REQUEST: //request
+					return new String(requestResponse.getRequest());
+				case RESPONSE: //response
+					return new String(requestResponse.getResponse());
+				case REQUESTTIME: //requestTime
+					return requestTime;
+				case RESPONSEDELAY:
+					return requestResponseDelay;
+				default:
+					return "";
 			}
 		}catch(Exception e){
 			return "";
 		}
 	}
 
-	private enum cookieJarStatus {
+	public ArrayList<UUID> getMatchingColorFilters(){return matchingColorFilters;}
+
+	public enum cookieJarStatus {
 		YES("Yes"),
 		NO("No"),
 		PARTIALLY("Partially");
 		private String value;
-		private cookieJarStatus(String value) {
+		cookieJarStatus(String value) {
 			this.value = value;
 		}
 		public String getValue() {
@@ -530,28 +642,32 @@ public class LogEntry
 	}
 
 	// This has been designed for Java v6 that cannot support String in "switch"
-	private enum columnNamesType {
+	public enum columnNamesType {
 		TOOL("TOOL"),
 		URL("URL"),
+		PATH("PATH"),
+		QUERY("QUERY"),
 		STATUS("STATUS"),
 		PROTOCOL("PROTOCOL"),
 		HOSTNAME("HOSTNAME"),
 		HOST("HOST"),
-		RESPONSECONTENTTYPE_BURP("RESPONSECONTENTTYPE_BURP"),
+		MIMETYPE("MIMETYPE"),
 		RESPONSELENGTH("RESPONSELENGTH"),
 		TARGETPORT("TARGETPORT"),
 		METHOD("METHOD"),
 		RESPONSETIME("RESPONSETIME"),
+		REQUESTTIME("REQUESTTIME"),
+		RESPONSEDELAY("RESPONSEDELAY"),
 		COMMENT("COMMENT"),
-		REQUSTCONTENTTYPE("REQUSTCONTENTTYPE"),
+		REQUESTCONTENTTYPE("REQUESTCONTENTTYPE"),
 		URLEXTENSION("URLEXTENSION"),
-		REFERRERURL("REFERRERURL"),
+		REFERRER("REFERRER"),
 		HASQUERYSTRINGPARAM("HASQUERYSTRINGPARAM"),
 		HASBODYPARAM("HASBODYPARAM"),
 		HASCOOKIEPARAM("HASCOOKIEPARAM"),
 		REQUESTLENGTH("REQUESTLENGTH"),
 		RESPONSECONTENTTYPE("RESPONSECONTENTTYPE"),
-		RESPONSEINFERREDCONTENTTYPE_BURP("RESPONSEINFERREDCONTENTTYPE_BURP"),
+		INFERREDTYPE("INFERREDTYPE"),
 		HASSETCOOKIES("HASSETCOOKIES"),
 		PARAMS("PARAMS"),
 		TITLE("TITLE"),
@@ -560,8 +676,7 @@ public class LogEntry
 		NEWCOOKIES("NEWCOOKIES"),
 		LISTENERINTERFACE("LISTENERINTERFACE"),
 		CLIENTIP("CLIENTIP"),
-		ISCOMPLETED("ISCOMPLETED"),
-		UNIQUEIDENTIFIER("UNIQUEIDENTIFIER"),
+		COMPLETE("COMPLETE"),
 		SENTCOOKIES("SENTCOOKIES"),
 		USESCOOKIEJAR("USESCOOKIEJAR"),
 		REGEX1REQ("REGEX1REQ"),
@@ -573,9 +688,11 @@ public class LogEntry
 		REGEX2RESP("REGEX2RESP"),
 		REGEX3RESP("REGEX3RESP"),
 		REGEX4RESP("REGEX4RESP"),
-		REGEX5RESP("REGEX5RESP");
+		REGEX5RESP("REGEX5RESP"),
+		REQUEST("REQUEST"),
+		RESPONSE("RESPONSE");
 		private String value;
-		private columnNamesType(String value) {
+		columnNamesType(String value) {
 			this.value = value;
 		}
 		public String getValue() {
@@ -584,6 +701,35 @@ public class LogEntry
 		@Override
 		public String toString() {
 			return getValue();
+		}
+	}
+
+	public synchronized boolean testColorFilter(ColorFilter colorFilter, boolean retest){
+		if(!colorFilter.isEnabled() || colorFilter.getFilter() == null){
+			return this.getMatchingColorFilters().remove(colorFilter.getUid());
+		}
+		if(!this.matchingColorFilters.contains(colorFilter.getUid())) {
+			if (colorFilter.getFilter().matches(this)) {
+				this.matchingColorFilters.add(colorFilter.getUid());
+				return true;
+			}else{
+				return false;
+			}
+		}else if(retest){
+			if (!colorFilter.getFilter().matches(this)) {
+				this.matchingColorFilters.remove(colorFilter.getUid());
+			}
+			return true;
+		}else{
+			return false;
+		}
+	}
+
+	public static class PendingRequestEntry extends LogEntry {
+		int logRow;
+
+		PendingRequestEntry(int tool, boolean messageIsRequest, IHttpRequestResponse requestResponse, URL url, IRequestInfo tempAnalyzedReq, IInterceptedProxyMessage message) {
+			super(tool, messageIsRequest, requestResponse, url, tempAnalyzedReq, message);
 		}
 	}
 }

@@ -1,29 +1,44 @@
 package burp;
 
-import java.awt.Point;
+import javax.swing.*;
+import javax.swing.event.TableColumnModelEvent;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumnModel;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.PrintWriter;
-import javax.swing.table.JTableHeader;
-import javax.swing.table.TableColumn;
-import javax.swing.table.TableColumnModel;
-import burp.BurpExtender.Table;
-import burp.BurpExtender.TableHelper;
 
 // This was used to create tool tips
 public class TableHeader extends JTableHeader {
 
-	private final Table logTable;
-	private final TableHelper tableHelper;
-	private final boolean isDebug;
-	private final PrintWriter stdout, stderr;
+	private final LogTableColumnModel tableColumnModel;
+	private final LogTable logTable;
 	
-	TableHeader(TableColumnModel tcm, Table logTable, TableHelper tableHelper, PrintWriter stdout, PrintWriter stderr, boolean isDebug) {
+	TableHeader(TableColumnModel tcm, final LogTable logTable) {
 		super(tcm);
+		this.tableColumnModel = (LogTableColumnModel) tcm;
 		this.logTable = logTable;
-		this.tableHelper= tableHelper;
-		this.isDebug=isDebug;
-		this.stdout = stdout;
-		this.stderr=stderr;
+
+		this.addMouseListener(new MouseAdapter(){
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				if ( SwingUtilities.isRightMouseButton( e ))
+				{
+					// get the coordinates of the mouse click
+					Point p = e.getPoint();
+					int columnID = columnAtPoint(p);
+					LogTableColumn column = tableColumnModel.getColumn(columnID);
+					//TODO
+					TableHeaderMenu tblHeaderMenu = new TableHeaderMenu(logTable, column);
+					tblHeaderMenu.showMenu(e);
+				}else if(SwingUtilities.isLeftMouseButton(e)){
+
+				}
+			}
+		});
+
 	}
 
 	@Override
@@ -32,16 +47,11 @@ public class TableHeader extends JTableHeader {
 		// get the coordinates of the mouse click
 		Point p = e.getPoint();
 		int columnID = logTable.columnAtPoint(p);
-		TableColumn column = logTable.getColumnModel().getColumn(columnID);
-		TableStructure columnObj = tableHelper.getTableHeaderColumnsDetails().getAllColumnsDefinitionList().get((Integer) column.getIdentifier());
-		if(isDebug){
-			stdout.println("right click detected on the header!");
-			stdout.println("right click on item number " + String.valueOf(columnID) + " ("+logTable.getColumnName(columnID)+") was detected");
-		}
+		LogTableColumn column = logTable.getColumnModel().getColumn(columnID);
 
 		String retStr;
 		try {
-			retStr = columnObj.getDescription();
+			retStr = column.getDescription();
 		} catch (NullPointerException ex) {
 			retStr = "";
 		} catch (ArrayIndexOutOfBoundsException ex) {

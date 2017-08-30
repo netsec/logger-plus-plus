@@ -1,3 +1,96 @@
+v 3.04
+=========================================================================
+- Added more context menu options.
+
+v 3.03
+=========================================================================
+- Fix crash on launch if no filters are saved in the settings.
+- Sort order now persists over restarts.
+
+v 3.02
+=========================================================================
+- Ability to save a library of filters.
+
+v 3.01
+=========================================================================
+- Fix issue where columns would not be reloaded after a restart.
+- Fix issue where Logger++ could be popped out multiple times.
+- Prevent autosave throwing an error on startup.
+- Fix issue with view option showing incorrect selection.
+
+v 3.0
+=========================================================================
+- Public beta release.
+
+v 2.88
+=========================================================================
+- Ability to set a maximum limit on number of items logged.
+- Pop out view.
+- Multiple views for request / response panel.
+- Automatic clean up of pending requests.
+- Extension settings saved via burp.
+
+v 2.87
+=========================================================================
+- Fix row selection when requests/responses are disabled.
+- Better parsing of filter. Compound filter display improvements.
+- Fix proper processing of regex filters using !=
+- QOL Filter display fix.
+
+v 2.86
+=========================================================================
+- Live viewing of incomplete requests.
+- Fix column sorting bug.
+
+v 2.85
+=========================================================================
+- Fix color filters not updating when the filter is disabled.
+
+v 2.84
+=========================================================================
+- Enable request and response filters.
+- Add context menu to quickly create filters and color filters.
+- Behind the scenes refactoring.
+
+v 2.83
+=========================================================================
+- Update on startup.
+- More efficient options UI creation.
+
+v 2.82
+=========================================================================
+- Added in-plugin updates.
+
+v 2.8.1
+=========================================================================
+- Priority can now be set on color filters.
+- Multiple views supported. Top/Bottom Split, Left/Right Split, Tabbed.
+
+v 2.8
+=========================================================================
+- Color filters now save over sessions.
+- Fixed some filter parse issues where compound filters contained regex.
+
+v 2.7
+=========================================================================
+- Added automatic log saving.
+- Added setting of colorization rules using filters.
+- Added export feedback.
+
+v 2.6
+=========================================================================
+- Fixed filters working incorrectly when a column is hidden
+
+v 2.5
+=========================================================================
+- Added the use of regular expressions in filters
+- Fixed filter bracket matching
+
+v 2.4
+=========================================================================
+- Added option for basic filters to be used
+- Code refactor
+
 v 2.3
 =========================================================================
 - Verify the provided regular expressions to be valid

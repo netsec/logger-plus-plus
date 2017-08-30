@@ -12,40 +12,34 @@
 
 package burp;
 
-import javax.swing.ImageIcon;
-import javax.swing.JPanel;
-import java.awt.GridBagLayout;
-import javax.swing.JLabel;
-import java.awt.Desktop;
-import java.awt.GridBagConstraints;
-import java.awt.Insets;
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.swing.JButton;
-import java.awt.event.ActionListener;
-import java.awt.event.ActionEvent;
 
 public class AboutPanel extends JPanel {
 
 	private final burp.IBurpExtenderCallbacks callbacks;
-	private final PrintWriter stdout;
-	private final PrintWriter stderr;
 	private final LoggerPreferences loggerPreferences;
-	private final boolean isDebug;
 	/**
 	 * Create the panel.
 	 */
-	public AboutPanel(IBurpExtenderCallbacks callbacks, PrintWriter stdout, PrintWriter stderr, final LoggerPreferences loggerPreferences, boolean isDebug) {
-		this.callbacks = callbacks;
-		this.stdout = stdout;
-		this.stderr = stderr;
-		this.loggerPreferences = loggerPreferences;
-		this.isDebug  = isDebug;
+	public AboutPanel() {
+		BurpExtender burp = BurpExtender.getInstance();
+		this.callbacks = burp.getCallbacks();
+		this.loggerPreferences = burp.getLoggerPreferences();
 
 		GridBagLayout gridBagLayout = new GridBagLayout();
 		gridBagLayout.columnWidths = new int[]{0, 86, 80, 248, 0};
@@ -56,10 +50,13 @@ public class AboutPanel extends JPanel {
 
 		ClassLoader cldr = this.getClass().getClassLoader();
 		java.net.URL imageURLMain   = cldr.getResource("resources/AboutMain.png");
-		ImageIcon imageIconMain = new ImageIcon(imageURLMain);
 		JLabel lblMain = new JLabel("Main"); // to see the label in eclipse design tab!
-		if("running".equals("running")) // to see the image while running it.
-			lblMain = new JLabel(imageIconMain);
+		ImageIcon imageIconMain;
+		if(imageURLMain != null) {
+			imageIconMain = new ImageIcon(imageURLMain);
+			if ("running".equals("running")) // to see the image while running it.
+				lblMain = new JLabel(imageIconMain);
+		}
 		GridBagConstraints gbc_lblMain = new GridBagConstraints();
 		gbc_lblMain.gridheight = 8;
 		gbc_lblMain.insets = new Insets(0, 0, 0, 5);
@@ -174,7 +171,7 @@ public class AboutPanel extends JPanel {
 					@Override
 					public void run()
 					{
-						checkForUpdate();
+						checkForUpdate(true);
 					}
 				}).start();
 			}
@@ -214,7 +211,7 @@ public class AboutPanel extends JPanel {
 		}
 	}
 
-	public void checkForUpdate() {
+	public void checkForUpdate(boolean showMessages) {
 		IExtensionHelpers helper = callbacks.getHelpers();
 		Double currenVersion = loggerPreferences.getVersion();
 		Double latestVersion = 0.0;
@@ -230,7 +227,7 @@ public class AboutPanel extends JPanel {
 				String strFullMessage = new String(response,"UTF-8");
 				if(strFullMessage.contains("\r\n\r\n")){
 					String strBody = strFullMessage.split("\r\n\r\n",2)[1];
-					Pattern MY_PATTERN = Pattern.compile("(?im)^[\\s]*v[\\s]*(\\d+(\\.*\\d*){0,1})$"); 
+					Pattern MY_PATTERN = Pattern.compile("(?im)^[\\s]*v[\\s]*(\\d+(\\.*\\d*){0,1})$");
 
 					Matcher m = MY_PATTERN.matcher(strBody);
 
@@ -249,33 +246,51 @@ public class AboutPanel extends JPanel {
 
 			}
 		}catch(Exception e){
-			stderr.println(e.getMessage());
+			BurpExtender.getInstance().getCallbacks().printError(e.getMessage());
 		}
 
 		switch(updateStatus){
 		case -1:
 			updateMessage = "Check for update failed: Could not get a proper response from "+loggerPreferences.getChangeLog();
-			stderr.println(updateMessage);
+			BurpExtender.getInstance().getCallbacks().printError(updateMessage);
 			break;
 		case 0:
 			updateMessage = "This version is up to date.";
-			stdout.println(updateMessage);
+			BurpExtender.getInstance().getCallbacks().printOutput(updateMessage);
 			break;
 		case 1:
 			updateMessage = "Version "+latestVersion.toString()+" is available via GitHub. Visit the extension homepage.";
 			if(callbacks.isExtensionBapp()){
-				updateMessage += "\\nAs you are using BApp Store, you have to remove it first and download the Jar file from the GitHub repository. ";
+				updateMessage += "\nAs you are using BApp Store, you have to remove it first and download the Jar file from the GitHub repository. ";
+			}else{
+				if(callbacks.getExtensionFilename() != null){
+					int res = MoreHelp.askConfirmMessage("Update Available", "An update is available. Would you like to update now?", new String[]{"Yes", "No"});
+					if(res == JOptionPane.OK_OPTION){
+						try {
+							URL updateUrl = new URL(loggerPreferences.getUpdateURL());
+							InputStream input = updateUrl.openStream();
+							Path outputPath = Paths.get(callbacks.getExtensionFilename());
+							Files.copy(input, outputPath, StandardCopyOption.REPLACE_EXISTING);
+						} catch (Exception e) {
+							MoreHelp.showMessage("Could not update the plugin. Please visit the extension page to update manually.");
+							return;
+						}
+						MoreHelp.showMessage("Update complete. Re-enable the plugin in the extensions tab to continue.");
+						callbacks.unloadExtension();
+						return;
+					}
+				}
 			}
-			stdout.println(updateMessage);
+			BurpExtender.getInstance().getCallbacks().printOutput(updateMessage);
 			break;
 		case 2:
 			updateMessage = "This version is more up to date than the GitHub version! Are you a time traveler? or just a keen ninja? ;)";
-			stdout.println(updateMessage);
+			BurpExtender.getInstance().getCallbacks().printOutput(updateMessage);
 			break;
 		}
-
+		if(!showMessages) return;
 		MoreHelp.showMessage(updateMessage);
-
 	}
+
 
 }
