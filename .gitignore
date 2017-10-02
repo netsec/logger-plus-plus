@@ -2,8 +2,9 @@
 .settings/
 .externalToolBuilders/
 bin/
+Util/
+libs/burpsuite_pro.jar
 BurpLogger++.iml
-FILTERS
 TODO
 .classpath
 .project
