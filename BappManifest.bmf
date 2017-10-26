@@ -2,11 +2,11 @@ Uuid: 470b7057b86f41c396a97903377f3d81
 ExtensionType: 1
 Name: Logger++
 RepoName: logger-plus-plus
-ScreenVersion: 2.3
+ScreenVersion: 3.062
 SerialVersion: 3
 MinPlatformVersion: 0
 ProOnly: False
-Author: Soroush Dalili, NCC Group
+Author: Soroush Dalili & Corey Arthur, NCC Group
 ShortDescription: Logs requests and responses for all Burp tools in a sortable table.
 EntryPoint: burplogger++.jar
-BuildCommand: ant
+BuildCommand: gradle jar
