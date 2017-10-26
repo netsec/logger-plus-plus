@@ -28,7 +28,7 @@ import java.util.*;
 public class LoggerPreferences {
 	private final LoggerPlusPlus loggerPlusPlus;
 	private Gson gson = new GsonBuilder().registerTypeAdapter(Filter.class, new Filter.FilterSerializer()).create();
-	static final double version = 3.062;
+	static final double version = 3.064;
 	static final String appName = "Burp Suite Logger++";
 	static final String author = "Soroush Dalili (@irsdl), Corey Arthur (@CoreyD97) from NCC Group";
 	static final String companyLink = "https://www.nccgroup.trust/";
@@ -54,7 +54,6 @@ public class LoggerPreferences {
 	private boolean isEnabled4Sequencer;
 	private boolean isEnabled4Extender;
 	private boolean isEnabled4TargetTab;
-	private boolean logFiltered;
 	private String tableDetailsJSONString;
 	private boolean autoSave;
 	private ArrayList<SavedFilter> savedFilters;
@@ -66,6 +65,7 @@ public class LoggerPreferences {
 	private int maximumEntries;
 	private boolean canSaveCSV;
 	private int searchThreads;
+	private boolean autoImportProxyHistory;
 
 	// Reading from registry constantly is expensive so I have changed the preferences to load them in objects
 
@@ -213,15 +213,6 @@ public class LoggerPreferences {
 		this.isEnabled4TargetTab = isEnabled4TargetTab;
 	}
 
-	public synchronized void setLoggingFiltered(boolean logFiltered){
-		LoggerPlusPlus.getCallbacks().saveExtensionSetting("filterlog", String.valueOf(logFiltered));
-		this.logFiltered = logFiltered;
-	}
-
-	public synchronized boolean isLoggingFiltered(){
-		return this.logFiltered;
-	}
-
 	public Map<UUID, ColorFilter> getColorFilters() { return colorFilters; }
 
 	public synchronized void setColorFilters(Map<UUID, ColorFilter> colorFilters) {
@@ -306,6 +297,15 @@ public class LoggerPreferences {
 		this.searchThreads = searchThreads;
 	}
 
+	public boolean autoImportProxyHistory() {
+		return autoImportProxyHistory;
+	}
+
+	public void setAutoImportProxyHistory(boolean autoImport){
+		LoggerPlusPlus.getCallbacks().saveExtensionSetting("autoimportproxyhistory", String.valueOf(autoImport));
+		this.autoImportProxyHistory = autoImport;
+	}
+
 	//Do not persist over restarts.
 	public void setAutoSave(boolean autoSave) {
 		this.autoSave = autoSave;
@@ -358,7 +358,6 @@ public class LoggerPreferences {
 		isEnabled4Scanner = getBooleanSetting("logscanner", true);
 		isEnabled4Intruder = getBooleanSetting("logintruder", true);
 		isEnabled4Spider = getBooleanSetting("logspider", true);
-		logFiltered = getBooleanSetting("filterlog", false);
 		tableDetailsJSONString = getStringSetting("tabledetailsjson", "");
 		String colorFilters = getStringSetting("colorfilters", defaultColorFilter);
 		try {
@@ -383,6 +382,7 @@ public class LoggerPreferences {
 		view = View.valueOf(getStringSetting("layout", "VERTICAL"));
 		reqRespView = View.valueOf(getStringSetting("msgviewlayout", "HORIZONTAL"));
 		this.searchThreads = getIntSetting("searchthreads", 5);
+		this.autoImportProxyHistory = getBooleanSetting("autoimportproxyhistory", true);
 	}
 
 	private Boolean getBooleanSetting(String setting, Boolean fallback){
@@ -441,7 +441,6 @@ public class LoggerPreferences {
 		setEnabled4Sequencer(true);
 		setEnabled4Extender(true);
 		setEnabled4TargetTab(true);
-		setLoggingFiltered(false);
 		loggerPlusPlus.getLogSplitPanel().setView(View.VERTICAL);
 		loggerPlusPlus.getReqRespPanel().setView(View.HORIZONTAL);
 
