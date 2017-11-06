@@ -60,19 +60,26 @@ public class LogManager implements IHttpListener, IProxyListener {
     @Override
     public void processHttpMessage(final int toolFlag, final boolean messageIsRequest, final IHttpRequestResponse requestResponse) {
         //REQUEST AND RESPONSE SINGLE MESSAGE
+        final LogEntry logEntry = new LogEntry();
+        processHttpMessage(logEntry, toolFlag, requestResponse);
+    }
+
+    //Wrapper to allow a custom LogEntry to be passed as a parameter
+    //Custom LogEntry used when importing proxy history.
+    //messageIsRequest is removed as not needed.
+    public void processHttpMessage(final LogEntry logEntry, final int toolFlag, final IHttpRequestResponse requestResponse){
         executorService.submit(new Runnable() {
             @Override
             public void run() {
-                if(toolFlag != IBurpExtenderCallbacks.TOOL_PROXY){
+                if(toolFlag != IBurpExtenderCallbacks.TOOL_PROXY || logEntry.isImported){
                     if(requestResponse == null || !prefs.isEnabled()) return;
-                    LogEntry logEntry = new LogEntry();
                     IRequestInfo analyzedReq = LoggerPlusPlus.getCallbacks().getHelpers().analyzeRequest(requestResponse);
                     URL uUrl = analyzedReq.getUrl();
                     if (isValidTool(toolFlag) && (!prefs.isRestrictedToScope() || LoggerPlusPlus.getCallbacks().isInScope(uUrl))){
                         //We will not need to change messageInfo so save to temp file
                         IHttpRequestResponse savedReqResp = LoggerPlusPlus.getCallbacks().saveBuffersToTempFiles(requestResponse);
                         logEntry.processRequest(toolFlag, savedReqResp, uUrl, analyzedReq, null);
-                        logEntry.processResponse(savedReqResp);
+                        if(requestResponse.getResponse() != null) logEntry.processResponse(savedReqResp);
                         //Check entry against colorfilters.
                         for (ColorFilter colorFilter : prefs.getColorFilters().values()) {
                             logEntry.testColorFilter(colorFilter, false);
@@ -87,18 +94,18 @@ public class LogManager implements IHttpListener, IProxyListener {
     @Override
     public void processProxyMessage(final boolean messageIsRequest, final IInterceptedProxyMessage proxyMessage) {
         //REQUEST AND RESPONSE SEPARATE
+        final LogEntry.PendingRequestEntry logEntry;
+        if(messageIsRequest){
+            logEntry = new LogEntry.PendingRequestEntry();
+        }else{
+            synchronized (pendingRequests) {
+                logEntry = pendingRequests.remove(proxyMessage.getMessageReference());
+            }
+        }
         executorService.submit(new Runnable() {
             @Override
             public void run() {
                 if(proxyMessage == null || !prefs.isEnabled()) return;
-                LogEntry.PendingRequestEntry logEntry;
-                if(messageIsRequest){
-                    logEntry = new LogEntry.PendingRequestEntry();
-                }else{
-                    synchronized (pendingRequests) {
-                        logEntry = pendingRequests.remove(proxyMessage.getMessageReference());
-                    }
-                }
                 IHttpRequestResponse requestResponse = proxyMessage.getMessageInfo();
                 IRequestInfo analyzedReq = LoggerPlusPlus.getCallbacks().getHelpers().analyzeRequest(requestResponse);
                 URL uUrl = analyzedReq.getUrl();
@@ -121,8 +128,10 @@ public class LogManager implements IHttpListener, IProxyListener {
                             updatePendingRequest(logEntry, requestResponse);
                         } else {
                             lateResponses++;
-                            if(totalRequests > 100 && ((float)lateResponses)/totalRequests > 0.1){
+                            if(totalRequests > 100 && ((float)lateResponses)/totalRequests > 0.17){
                                 MoreHelp.showWarningMessage(lateResponses + " responses have been delivered after the Logger++ timeout. Consider increasing this value.");
+                                //Reset late responses to prevent message being displayed again so soon.
+                                lateResponses = 0;
                             }
                         }
                     }
@@ -154,6 +163,10 @@ public class LogManager implements IHttpListener, IProxyListener {
 
     private void updatePendingRequest(LogEntry.PendingRequestEntry pendingRequest, IHttpRequestResponse messageInfo) {
         //Fill in gaps of request with response
+        if(messageInfo == null) {
+            LoggerPlusPlus.getCallbacks().printError("Warning: Response received with null messageInfo.");
+            return;
+        }
         pendingRequest.processResponse(messageInfo);
 
         for (ColorFilter colorFilter : prefs.getColorFilters().values()) {
@@ -203,5 +216,11 @@ public class LogManager implements IHttpListener, IProxyListener {
 
     public int getMaximumEntries() {
         return prefs.getMaximumEntries();
+    }
+
+    public void importExisting(IHttpRequestResponse requestResponse) {
+        int toolFlag = IBurpExtenderCallbacks.TOOL_PROXY;
+        LogEntry logEntry = new LogEntry(true);
+        processHttpMessage(logEntry, toolFlag, requestResponse);
     }
 }
