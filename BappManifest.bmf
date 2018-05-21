@@ -3,7 +3,7 @@ ExtensionType: 1
 Name: Logger++
 RepoName: logger-plus-plus
 ScreenVersion: 3.064
-SerialVersion: 5
+SerialVersion: 6
 MinPlatformVersion: 0
 ProOnly: False
 Author: Soroush Dalili & Corey Arthur, NCC Group
