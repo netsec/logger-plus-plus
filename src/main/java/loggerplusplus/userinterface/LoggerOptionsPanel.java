@@ -21,6 +21,8 @@ import loggerplusplus.MoreHelp;
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -48,6 +50,17 @@ public class LoggerOptionsPanel extends JScrollPane{
     private JToggleButton btnAutoSaveLogs = new JToggleButton("Autosave as CSV");
     private final JCheckBox chkExtender = new JCheckBox("Extender");
     private final JCheckBox chkTarget = new JCheckBox("Target");
+
+    private final JPanel elasticPanel;
+    private final JToggleButton esEnabled = new JToggleButton("Disabled");
+    private final JSpinner esPortSpinner = new JSpinner(new SpinnerNumberModel(9100, 0, 65535, 1));
+    private final JTextField esAddressField = new JTextField();
+    private final JTextField esClusterField = new JTextField();
+    private final JTextField esIndexField = new JTextField();
+    private final JSpinner esUploadDelay = new JSpinner(new SpinnerNumberModel(120, 10, 999999, 10));
+    private final JLabel esValueChangeWarning = new JLabel("Warning: Changing preferences while running will disable the upload service and clear all pending values.");
+
+
     private final JLabel lblColumnSettings = new JLabel("Note 0: Right click on columns' headers to change settings.");
     private final JLabel lblPerformanceNote = new JLabel("Note 1: Extensive logging  may affect Burp Suite performance.");
     private final JLabel lblAutoLoggingNote = new JLabel("Note 2: Automatic logging does not save requests and responses. Only table contents. ");
@@ -71,6 +84,7 @@ public class LoggerOptionsPanel extends JScrollPane{
         this.loggerPreferences = LoggerPlusPlus.getInstance().getLoggerPreferences();
         this.loggerPreferences.setAutoSave(false);
         this.fileLogger = new FileLogger();
+        this.esValueChangeWarning.setForeground(Color.RED);
         JPanel innerContainer = new JPanel(new GridBagLayout());
 
         GridBagConstraints gbc = new GridBagConstraints();
@@ -137,6 +151,72 @@ public class LoggerOptionsPanel extends JScrollPane{
         innerContainer.add(exportPanel, gbc);
 
 
+        elasticPanel = new JPanel(new GridBagLayout());
+        elasticPanel.setBorder(BorderFactory.createTitledBorder("Elastic Search"));
+        gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weightx = 1;
+        JLabel esAddress = new JLabel("Address:");
+        JLabel esClusterName = new JLabel("Cluster Name:");
+        JLabel esIndexName = new JLabel("Index:");
+        JLabel esRefreshTime = new JLabel("Upload Delay:");
+        JLabel esSecondsHint = new JLabel("(Seconds)");
+
+        gbc.gridwidth = 3;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weighty = 0;
+        gbc.weightx = 0;
+        elasticPanel.add(esEnabled, gbc);
+
+        gbc.gridy = 1;
+        JSeparator separator = new JSeparator(SwingConstants.HORIZONTAL);
+        separator.setBorder(BorderFactory.createEmptyBorder(5,0,5,0));
+        elasticPanel.add(separator, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.weighty = 1;
+        gbc.weightx = 0.25;
+        gbc.gridy = 2;
+        elasticPanel.add(esAddress, gbc);
+        gbc.gridy = 3;
+        elasticPanel.add(esClusterName, gbc);
+        gbc.gridy = 4;
+        elasticPanel.add(esIndexName, gbc);
+        gbc.gridy = 5;
+        elasticPanel.add(esRefreshTime, gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 2;
+        gbc.weightx = 1;
+        elasticPanel.add(esAddressField, gbc);
+        gbc.gridx = 2;
+        gbc.weightx = 0.25;
+        elasticPanel.add(esPortSpinner, gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.weightx = 1;
+        elasticPanel.add(esClusterField, gbc);
+        gbc.gridy = 4;
+        elasticPanel.add(esIndexField, gbc);
+        gbc.gridy = 5;
+        gbc.gridwidth = 1;
+        elasticPanel.add(esUploadDelay, gbc);
+        gbc.gridwidth = 1;
+        gbc.gridx = 2;
+        elasticPanel.add(esSecondsHint, gbc);
+
+
+
+        gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.gridx = 1;
+        gbc.gridy = 10;
+        gbc.gridheight = 4;
+        gbc.weightx = 1.0;
+        gbc.gridwidth = 2;
+        innerContainer.add(elasticPanel, gbc);
+
 
         JPanel otherPanel = new JPanel(new GridBagLayout());
         otherPanel.setBorder(BorderFactory.createTitledBorder("Other"));
@@ -196,7 +276,7 @@ public class LoggerOptionsPanel extends JScrollPane{
         gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.BOTH;
         gbc.gridx = 1;
-        gbc.gridy = 9;
+        gbc.gridy = 14;
         gbc.gridheight = 5;
         gbc.weightx = 1.0;
         gbc.gridwidth = 2;
@@ -214,7 +294,7 @@ public class LoggerOptionsPanel extends JScrollPane{
         gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.BOTH;
         gbc.gridx = 1;
-        gbc.gridy = 15;
+        gbc.gridy = 20;
         gbc.weightx = 1.0;
         gbc.gridwidth = 2;
         innerContainer.add(buttonPanel, gbc);
@@ -230,7 +310,7 @@ public class LoggerOptionsPanel extends JScrollPane{
         gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.BOTH;
         gbc.gridx = 1;
-        gbc.gridy = 16;
+        gbc.gridy = 21;
         gbc.gridheight = 1;
         gbc.weightx = 1.0;
         gbc.gridwidth = 2;
@@ -408,22 +488,12 @@ public class LoggerOptionsPanel extends JScrollPane{
 
         });
 
-        spnResponseTimeout.setModel(new SpinnerNumberModel(LoggerPlusPlus.getInstance().getLoggerPreferences().getResponseTimeout()/1000, 10, 600, 1));
-        spnResponseTimeout.addChangeListener(new ChangeListener() {
-            @Override
-            public void stateChanged(ChangeEvent changeEvent) {
-                LoggerPlusPlus.getInstance().getLoggerPreferences().setResponseTimeout(((Integer) spnResponseTimeout.getValue()).longValue()*1000);
-            }
-        });
+        spnResponseTimeout.setModel(new SpinnerNumberModel(loggerPreferences.getResponseTimeout()/1000, 10, 600, 1));
+        spnResponseTimeout.addChangeListener(changeEvent -> loggerPreferences.setResponseTimeout(((Integer) spnResponseTimeout.getValue()).longValue()*1000));
 
         int maxEntriesMax = 1000000;
-        spnMaxEntries.setModel(new SpinnerNumberModel(Math.min(LoggerPlusPlus.getInstance().getLoggerPreferences().getMaximumEntries(), maxEntriesMax), 10, maxEntriesMax, 10));
-        spnMaxEntries.addChangeListener(new ChangeListener() {
-            @Override
-            public void stateChanged(ChangeEvent changeEvent) {
-                LoggerPlusPlus.getInstance().getLoggerPreferences().setMaximumEntries((Integer) spnMaxEntries.getValue());
-            }
-        });
+        spnMaxEntries.setModel(new SpinnerNumberModel(Math.min(loggerPreferences.getMaximumEntries(), maxEntriesMax), 10, maxEntriesMax, 10));
+        spnMaxEntries.addChangeListener(changeEvent -> loggerPreferences.setMaximumEntries((Integer) spnMaxEntries.getValue()));
         spnMaxEntries.getEditor().getComponent(0).addFocusListener(new FocusAdapter() {
             @Override
             public void focusLost(FocusEvent e) {
@@ -434,12 +504,63 @@ public class LoggerOptionsPanel extends JScrollPane{
         int maxSearchThreads = 50;
         spnSearchThreads.setModel(new SpinnerNumberModel(
                 Math.min(LoggerPlusPlus.getInstance().getLoggerPreferences().getSearchThreads(), maxSearchThreads), 1, maxSearchThreads, 1));
-        spnSearchThreads.addChangeListener(new ChangeListener() {
+        spnSearchThreads.addChangeListener(changeEvent -> loggerPreferences.setSearchThreads((Integer) spnSearchThreads.getValue()));
+
+
+        this.esAddressField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
-            public void stateChanged(ChangeEvent changeEvent) {
-                LoggerPlusPlus.getInstance().getLoggerPreferences().setSearchThreads((Integer) spnSearchThreads.getValue());
+            public void insertUpdate(DocumentEvent documentEvent) {}
+            @Override
+            public void removeUpdate(DocumentEvent documentEvent) {}
+            @Override
+            public void changedUpdate(DocumentEvent documentEvent) {
+                toggleEsEnabledButton(false);
             }
         });
+        this.esAddressField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                super.focusLost(focusEvent);
+                loggerPreferences.setEsAddress(esAddressField.getText());
+            }
+        });
+        this.esPortSpinner.getModel().addChangeListener(changeEvent -> {
+            toggleEsEnabledButton(false);
+            Integer spinnerval = (Integer) esPortSpinner.getValue();
+            loggerPreferences.setEsPort(spinnerval.shortValue());
+        });
+        this.esClusterField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent documentEvent) {}
+            @Override
+            public void removeUpdate(DocumentEvent documentEvent) {}
+            @Override
+            public void changedUpdate(DocumentEvent documentEvent) {
+                toggleEsEnabledButton(false);
+            }
+        });
+        this.esClusterField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                super.focusLost(focusEvent);
+                loggerPreferences.setEsClusterName(esClusterField.getText());
+            }
+        });
+
+        this.esIndexField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                super.focusLost(focusEvent);
+                loggerPreferences.setEsIndex(esIndexField.getText());
+            }
+        });
+
+        this.esUploadDelay.addChangeListener(changeEvent -> {
+            loggerPreferences.setEsDelay((Integer) esUploadDelay.getValue());
+            toggleEsEnabledButton(false);
+        });
+
+        this.esEnabled.addActionListener(actionEvent -> toggleEsEnabledButton(esEnabled.isSelected()));
     }
 
     public void setAutoSaveBtn(boolean enabled){
@@ -452,6 +573,33 @@ public class LoggerOptionsPanel extends JScrollPane{
         loggerPreferences.setEnabled(isSelected);
     }
 
+    private void toggleEsEnabledButton(boolean isSelected) {
+        new Thread(() -> {
+            if(isSelected) {
+                esEnabled.setText("Starting...");
+            }
+            try {
+                LoggerPlusPlus.getInstance().setEsEnabled(isSelected);
+                esEnabled.setText((isSelected ? "Enabled" : "Disabled"));
+                esEnabled.setSelected(isSelected);
+                if(isSelected) {
+                    GridBagConstraints gbc = new GridBagConstraints();
+                    gbc.gridx = 0;
+                    gbc.gridwidth = 3;
+                    elasticPanel.add(esValueChangeWarning, gbc);
+                }else{
+                    elasticPanel.remove(esValueChangeWarning);
+                }
+            } catch (Exception e) {
+                if(isSelected) {
+                    MoreHelp.showWarningMessage("Elastic Search could not be enabled. Please check your settings.\n" + e.getMessage());
+                }
+                esEnabled.setText("Connection Failed");
+                esEnabled.setSelected(false);
+            }
+
+        }).start();
+    }
 
     private void setPreferencesValues() {
 
@@ -478,6 +626,12 @@ public class LoggerOptionsPanel extends JScrollPane{
         chkExtender.setSelected(loggerPreferences.isEnabled4Extender());
         chkTarget.setSelected(loggerPreferences.isEnabled4TargetTab());
         toggleEnabledButton(loggerPreferences.isEnabled());
+
+        this.esAddressField.setText(loggerPreferences.getEsAddress());
+        this.esPortSpinner.setValue(loggerPreferences.getEsPort());
+        this.esClusterField.setText(loggerPreferences.getEsClusterName());
+        this.esIndexField.setText(loggerPreferences.getEsIndex());
+        this.esUploadDelay.setValue(loggerPreferences.getEsDelay());
 
         if (!loggerPreferences.canSaveCSV()) {
             btnSaveLogs.setEnabled(false);
